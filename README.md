@@ -6,7 +6,7 @@
 
 - 🌤️ **本地天气** - 使用免费天气 API 获取实时天气信息
 - 🥇 **贵金属价格** - 抓取国际国内金价、银价、铂金价格
-- 💱 **外汇牌价** - 获取中国银行主要货币汇率
+- 💱 **外汇牌价** - 获取中国银行汇率（默认美元，可指定多种货币）
 - 📺 **国内外热点新闻** - 抓取央视新闻（国内10条+国际10条，共20条）
 - 🚢 **国际物流航运** - 抓取航运新闻前5条
 - 💰 **经济动向** - 抓取 Bloomberg 经济新闻前5条
@@ -55,8 +55,14 @@ python3 scripts/news_scraper.py --weather-only
 # 仅获取贵金属价格
 python3 scripts/news_scraper.py --gold-only
 
-# 仅获取外汇牌价
+# 仅获取外汇牌价（默认只获取美元）
 python3 scripts/news_scraper.py --forex-only
+
+# 指定多种货币（用逗号分隔）
+python3 scripts/news_scraper.py --forex-only --forex-currencies "美元,欧元,日元,英镑"
+
+# 获取所有主要货币
+python3 scripts/news_scraper.py --forex-only --forex-currencies "美元,港币,欧元,日元,英镑,澳大利亚元,加拿大元,新加坡元"
 
 # 仅获取新闻（央视新闻+航运+Bloomberg）
 python3 scripts/news_scraper.py --news-only
