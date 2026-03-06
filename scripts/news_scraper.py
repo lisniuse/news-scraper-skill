@@ -249,11 +249,12 @@ class NewsScraper:
             finally:
                 await browser.close()
     
-    async def fetch_exchange_rate(self, target_currencies=None):
+    async def fetch_exchange_rate(self, target_currencies=None, include_all_fields=False):
         """抓取外汇牌价 - 从 https://www.boc.cn/sourcedb/whpj/
         
         Args:
             target_currencies: 指定要抓取的货币列表，默认只抓取美元
+            include_all_fields: 是否包含所有字段，默认只显示买入和卖出价格
         """
         print("正在获取外汇牌价...")
         
@@ -272,8 +273,12 @@ class NewsScraper:
                 await page.wait_for_selector("table", timeout=10000)
                 
                 # 提取主要货币汇率
-                js_code = """
-                (targetCurrencies) => {
+                # 构建字段列表
+                fields = ['货币名称', '现汇买入价', '现钞买入价', '现汇卖出价', '现钞卖出价']
+                if include_all_fields:
+                    fields.extend(['中行折算价', '发布日期', '发布时间'])
+                
+                rates = await page.evaluate("""(targetCurrencies) => {
                     const data = [];
                     const rows = document.querySelectorAll('table tr');
                     
@@ -287,23 +292,51 @@ class NewsScraper:
                                     '现汇买入价': cells[1] && cells[1].textContent ? cells[1].textContent.trim() : '',
                                     '现钞买入价': cells[2] && cells[2].textContent ? cells[2].textContent.trim() : '',
                                     '现汇卖出价': cells[3] && cells[3].textContent ? cells[3].textContent.trim() : '',
-                                    '现钞卖出价': cells[4] && cells[4].textContent ? cells[4].textContent.trim() : '',
-                                    '中行折算价': cells[5] && cells[5].textContent ? cells[5].textContent.trim() : '',
-                                    '发布日期': cells[6] && cells[6].textContent ? cells[6].textContent.trim() : '',
-                                    '发布时间': cells[7] && cells[7].textContent ? cells[7].textContent.trim() : ''
+                                    '现钞卖出价': cells[4] && cells[4].textContent ? cells[4].textContent.trim() : ''
                                 });
                             }
                         }
                     });
                     return data;
-                }
-                """
-                rates = await page.evaluate(js_code, target_currencies)
+                }""", target_currencies)
+                
+                # 如果需要所有字段，再次抓取获取完整信息
+                if include_all_fields and len(rates) > 0:
+                    full_rates = await page.evaluate("""(targetCurrencies) => {
+                        const data = [];
+                        const rows = document.querySelectorAll('table tr');
+                        
+                        rows.forEach(row => {
+                            const cells = row.querySelectorAll('td');
+                            if (cells.length >= 8) {
+                                const currency = cells[0] && cells[0].textContent ? cells[0].textContent.trim() : '';
+                                if (targetCurrencies.includes(currency)) {
+                                    data.push({
+                                        '货币名称': currency,
+                                        '现汇买入价': cells[1] && cells[1].textContent ? cells[1].textContent.trim() : '',
+                                        '现钞买入价': cells[2] && cells[2].textContent ? cells[2].textContent.trim() : '',
+                                        '现汇卖出价': cells[3] && cells[3].textContent ? cells[3].textContent.trim() : '',
+                                        '现钞卖出价': cells[4] && cells[4].textContent ? cells[4].textContent.trim() : '',
+                                        '中行折算价': cells[5] && cells[5].textContent ? cells[5].textContent.trim() : '',
+                                        '发布日期': cells[6] && cells[6].textContent ? cells[6].textContent.trim() : '',
+                                        '发布时间': cells[7] && cells[7].textContent ? cells[7].textContent.trim() : ''
+                                    });
+                                }
+                            }
+                        });
+                        return data;
+                    }""", target_currencies)
+                    rates = full_rates
                 
                 result = {
                     "外汇牌价": rates,
                     "抓取时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
+                
+                if include_all_fields:
+                    result["包含字段"] = "全部字段（买入价、卖出价、中行折算价、发布时间）"
+                else:
+                    result["包含字段"] = "默认字段（买入价、卖出价）"
                 
                 self.results["外汇牌价"] = result
                 print(f"✓ 外汇牌价获取成功，共 {len(rates)} 种货币")
@@ -699,7 +732,7 @@ class NewsScraper:
         }
         return self.results["Bloomberg经济"]
     
-    async def run_all(self, city="北京", forex_currencies=None):
+    async def run_all(self, city="北京", forex_currencies=None, forex_all_fields=False):
         """运行所有抓取任务"""
         print("=" * 60)
         print("开始抓取新闻资讯...")
@@ -708,7 +741,7 @@ class NewsScraper:
         # 顺序执行所有抓取任务
         await self.fetch_weather(city)
         await self.fetch_gold_price()
-        await self.fetch_exchange_rate(forex_currencies)
+        await self.fetch_exchange_rate(forex_currencies, forex_all_fields)
         await self.fetch_cctv_news()
         await self.fetch_shipping_news()
         await self.fetch_bloomberg_news()
@@ -783,6 +816,8 @@ async def main():
                         help='仅获取外汇牌价')
     parser.add_argument('--forex-currencies', type=str, default='美元',
                         help='指定外汇牌价货币，用逗号分隔（如：美元,欧元,日元），默认只获取美元')
+    parser.add_argument('--forex-all-fields', action='store_true',
+                        help='获取外汇牌价所有字段（默认只显示买入和卖出价格）')
     parser.add_argument('--news-only', action='store_true',
                         help='仅获取新闻')
     
@@ -799,13 +834,13 @@ async def main():
     elif args.gold_only:
         await scraper.fetch_gold_price()
     elif args.forex_only:
-        await scraper.fetch_exchange_rate(forex_currencies)
+        await scraper.fetch_exchange_rate(forex_currencies, args.forex_all_fields)
     elif args.news_only:
         await scraper.fetch_cctv_news()
         await scraper.fetch_shipping_news()
         await scraper.fetch_bloomberg_news()
     else:
-        await scraper.run_all(args.city, forex_currencies)
+        await scraper.run_all(args.city, forex_currencies, args.forex_all_fields)
     
     # 打印摘要
     scraper.print_summary()
