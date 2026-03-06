@@ -309,7 +309,9 @@ class NewsScraper:
                 await browser.close()
     
     async def fetch_cctv_news(self):
-        """抓取央视新闻 - 从 https://news.cctv.com"""
+        """抓取央视新闻 - 从 https://news.cctv.com
+        抓取国内新闻10条 + 国际新闻10条
+        """
         print("正在获取央视新闻...")
         
         async with async_playwright() as p:
@@ -317,41 +319,81 @@ class NewsScraper:
             page = await self.create_stealth_page(browser)
             
             try:
-                await page.goto("https://news.cctv.com", wait_until="networkidle")
+                all_news = []
                 
-                # 等待页面加载
+                # 1. 抓取首页国内新闻（10条）
+                print("  正在抓取首页新闻...")
+                await page.goto("https://news.cctv.com", wait_until="networkidle")
                 await page.wait_for_timeout(3000)
                 
-                # 提取新闻标题和链接
-                news = await page.evaluate("""
+                domestic_news = await page.evaluate("""
                     () => {
                         const newsList = [];
-                        // 获取主要新闻
                         const links = document.querySelectorAll('a');
                         links.forEach(link => {
                             const title = link.textContent?.trim();
                             const href = link.href;
                             if (title && title.length > 10 && title.length < 100 && href && href.includes('cctv.com')) {
-                                // 去重
                                 if (!newsList.find(n => n.title === title)) {
                                     newsList.push({
                                         title: title,
-                                        url: href
+                                        url: href,
+                                        category: '国内'
                                     });
                                 }
                             }
                         });
-                        return newsList.slice(0, 20);  // 取前20条
+                        return newsList.slice(0, 10);
                     }
                 """)
                 
+                all_news.extend(domestic_news)
+                print(f"  ✓ 首页新闻获取成功，共 {len(domestic_news)} 条")
+                
+                # 2. 点击"国际"按钮进入国际新闻页面
+                print("  正在进入国际新闻页面...")
+                try:
+                    # 尝试直接访问国际新闻页面
+                    await page.goto("https://news.cctv.com/world", wait_until="networkidle")
+                    print("  ✓ 已访问国际新闻页面")
+                    
+                    await page.wait_for_timeout(3000)
+                    
+                    # 抓取国际新闻（10条）
+                    intl_news = await page.evaluate("""
+                        () => {
+                            const newsList = [];
+                            const links = document.querySelectorAll('a');
+                            links.forEach(link => {
+                                const title = link.textContent?.trim();
+                                const href = link.href;
+                                if (title && title.length > 10 && title.length < 100 && href && href.includes('cctv.com')) {
+                                    if (!newsList.find(n => n.title === title)) {
+                                        newsList.push({
+                                            title: title,
+                                            url: href,
+                                            category: '国际'
+                                        });
+                                    }
+                                }
+                            });
+                            return newsList.slice(0, 10);
+                        }
+                    """)
+                    
+                    all_news.extend(intl_news)
+                    print(f"  ✓ 国际新闻获取成功，共 {len(intl_news)} 条")
+                    
+                except Exception as e:
+                    print(f"  ⚠️ 国际新闻获取失败: {e}")
+                
                 result = {
-                    "新闻": news,
+                    "新闻": all_news,
                     "抓取时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 
                 self.results["央视新闻"] = result
-                print(f"✓ 央视新闻获取成功，共 {len(news)} 条")
+                print(f"✓ 央视新闻获取成功，共 {len(all_news)} 条（国内+国际）")
                 return result
                 
             except Exception as e:
